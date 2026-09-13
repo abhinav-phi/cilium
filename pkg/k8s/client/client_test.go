@@ -252,9 +252,14 @@ func Test_client(t *testing.T) {
 	// Wait until heartbeat has been seen to check that heartbeats are
 	// running.
 	err := testutils.WaitUntil(
-		func() bool { return getRequest("/readyz") != nil },
+		func() bool { return getRequest("/livez") != nil },
 		time.Second)
 	require.NoError(t, err)
+
+	// The heartbeat must exclude the etcd check: a transient etcd stall makes
+	// /livez (and /healthz, /readyz) fail without affecting established
+	// watches, and must not be treated as a network failure.
+	require.Equal(t, "etcd", getRequest("/livez").URL.Query().Get("exclude"))
 
 	// Test that all different clientsets are wired correctly.
 	_, err = clientset.CoreV1().Pods("test").Get(context.TODO(), "pod", metav1.GetOptions{})
@@ -621,7 +626,7 @@ func Test_clientMultipleAPIServersFailedHeartbeat(t *testing.T) {
 			       "major": "1",
 			       "minor": "99"
 			}`))
-			case "/readyz":
+			case "/livez":
 				healthServer.Store("health", "http://"+r.Host)
 			default:
 				w.Write([]byte("{}"))

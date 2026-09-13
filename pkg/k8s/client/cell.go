@@ -313,11 +313,19 @@ func (c *compositeClientset) startHeartbeat() {
 
 	heartBeat := func(ctx context.Context) error {
 		// Kubernetes does a get node of the node that kubelet is running [0]. This seems excessive in
-		// our case because the amount of data transferred is bigger than doing a Get of /readyz.
-		// For this reason we have picked to perform a get on `/readyz` instead a get of a node.
+		// our case because the amount of data transferred is bigger than doing a Get of /livez.
+		// For this reason we have picked to perform a get on `/livez` instead a get of a node.
+		//
+		// `/livez` reflects the liveness of the kube-apiserver process, which is what the
+		// heartbeat needs: while the API server process is up, established watches keep
+		// working and there is nothing for the client to recover from. The `etcd` check
+		// is excluded because a transient etcd stall makes `/livez` (and `/healthz`,
+		// `/readyz`) fail without affecting the ability of the API server to serve
+		// established watches. Treating it as a network failure tears down all client
+		// connections on every agent and triggers full watcher resyncs.
 		//
 		// [0] https://github.com/kubernetes/kubernetes/blob/v1.17.3/pkg/kubelet/kubelet_node_status.go#L423
-		res := restClient.Get().Resource("readyz").Do(ctx)
+		res := restClient.Get().Resource("livez").Param("exclude", "etcd").Do(ctx)
 		return res.Error()
 	}
 
